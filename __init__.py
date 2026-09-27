@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-LY Multi LoRA Loader (6)
+LY-多lora加载
 一个 ComfyUI 节点：在一个节点里同时加载最多 6 个 LoRA。
 每个槽位：LoRA 选择 + 启用开关（点击开/关）+ 类型（默认/风格/人物）+ 强度。
+CLIP 输入是可选的：不接 CLIP 时只作用于画面模型。
 关闭的槽位不加载、不占显存，多个 LoRA 按槽位顺序叠加。
 """
 
@@ -40,7 +41,8 @@ class LYMultiLoraLoader:
         "在一个节点里同时加载最多 6 个 LoRA。"
         "每个槽位：LoRA 选择 + 启用开关（点击开/关）+ 类型（默认/风格/人物）+ 强度。"
         "开关关闭的槽位会被跳过，不加载、不占显存。多个 LoRA 按槽位顺序叠加。"
-        "类型说明：默认=模型与文本同强度；风格=文本强度取0，只影响画面；人物=文本强度固定1.0，保证角色触发词生效。"
+        "CLIP 可以不接：不接时只作用于画面模型，类型里的文本规则自动失效。"
+        "类型说明：默认=模型与文本同强度；风格=文本强度取0，只影响画面；人物=文本强度固定1.0。"
     )
 
     @classmethod
@@ -48,50 +50,56 @@ class LYMultiLoraLoader:
         loras = [EMPTY] + folder_paths.get_filename_list("loras")
         required = {
             "model": ("MODEL",),
+        }
+        # CLIP 设为可选：不想接就不接，节点照常工作
+        optional = {
             "clip": ("CLIP",),
         }
         for i in range(1, MAX_SLOTS + 1):
             required.update({
-                f"lora_{i}": (loras, {"default": EMPTY}),
-                f"enable_{i}": ("BOOLEAN", {
+                f"LoRA {i}": (loras, {"default": EMPTY}),
+                f"启用 {i}": ("BOOLEAN", {
                     "default": False,
                     "label_on": "启用",
                     "label_off": "关闭",
                 }),
-                f"type_{i}": (LORA_TYPES, {"default": "默认"}),
-                f"strength_{i}": ("FLOAT", {
+                f"类型 {i}": (LORA_TYPES, {"default": "默认"}),
+                f"强度 {i}": ("FLOAT", {
                     "default": 0.8, "min": -10.0, "max": 10.0, "step": 0.01,
                     "round": 0.01,
                 }),
             })
-        return {"required": required}
+        return {"required": required, "optional": optional}
 
-    def load_loras(self, model, clip, **kwargs):
+    def load_loras(self, model, clip=None, **kwargs):
         model_clone = model.clone()
-        clip_clone = clip.clone()
+        clip_clone = clip.clone() if clip is not None else None
         loaded = []
 
         for i in range(1, MAX_SLOTS + 1):
             # 开关关闭 → 直接跳过，不读文件不占显存
-            if not kwargs.get(f"enable_{i}", False):
+            if not kwargs.get(f"启用 {i}", False):
                 continue
 
-            name = kwargs.get(f"lora_{i}", EMPTY)
+            name = kwargs.get(f"LoRA {i}", EMPTY)
             if not name or name == EMPTY:
                 continue
 
             path = folder_paths.get_full_path("loras", name)
             if not path:
                 raise FileNotFoundError(
-                    f"[LY Multi LoRA Loader] 在 models/loras 里找不到 LoRA 文件: {name}"
+                    f"[LY-多lora加载] 在 models/loras 里找不到 LoRA 文件: {name}"
                 )
 
-            lora_type = kwargs.get(f"type_{i}", "默认")
+            lora_type = kwargs.get(f"类型 {i}", "默认")
             if lora_type not in LORA_TYPES:
                 lora_type = "默认"
             model_strength, clip_strength = resolve_strength(
-                lora_type, kwargs.get(f"strength_{i}", 0.8)
+                lora_type, kwargs.get(f"强度 {i}", 0.8)
             )
+            if clip is None:
+                # 没接 CLIP：文本侧无从谈起，只作用于画面模型
+                clip_strength = 0.0
 
             lora = comfy.utils.load_torch_file(path, safe_load=True)
             model_clone, clip_clone = comfy.sd.load_lora_for_models(
@@ -106,6 +114,8 @@ class LYMultiLoraLoader:
             )
 
         report = " + ".join(loaded) if loaded else "(没有启用任何 LoRA)"
+        if clip is None and loaded:
+            report += "（未接CLIP：只作用于画面模型）"
         return (model_clone, clip_clone, report)
 
 
@@ -119,5 +129,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LY Multi LoRA Loader (6)": "LY-多lora加载",
 }
 
-# 前端增强脚本目录（中文标签、关闭槽位变灰、开启空槽自动选 LoRA）
+# 前端增强脚本目录（关闭槽位变灰、开启空槽自动选 LoRA）
 WEB_DIRECTORY = "./web"
