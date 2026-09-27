@@ -110,11 +110,13 @@ class LYMultiLoraLoader:
 
 
 NODE_CLASS_MAPPINGS = {
+    # 这个键是节点在系统里的"身份证号"，旧工作流靠它找回节点，不要改
     "LY Multi LoRA Loader (6)": LYMultiLoraLoader,
 }
 
+# 双击搜索框、节点标题栏显示的名字，这里用中文
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "LY Multi LoRA Loader (6)": "LY 多LoRA加载器（6槽位）",
+    "LY Multi LoRA Loader (6)": "LY-多lora加载",
 }
 
 # 前端增强脚本目录（中文标签、关闭槽位变灰、开启空槽自动选 LoRA）
